@@ -1,0 +1,1178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Fieldmark — Drawing Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#0A1220">
+<link rel="icon" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<!-- Loaded from a local vendor/ copy, not a CDN, so the app works with no network connection.
+     See README.md for how to place pdf.min.js and pdf.worker.min.js here. -->
+<script src="./vendor/pdf.min.js"></script>
+<style>
+:root{
+  --bg:#0A1220;
+  --panel:#0F1A2B;
+  --panel-2:#152238;
+  --grid:#18283F;
+  --border:#233754;
+  --border-soft:#1B2C46;
+  --text:#E7EEF7;
+  --text-dim:#8CA0BE;
+  --text-mute:#54698C;
+  --cyan:#45D3E8;
+  --cyan-dim:#1F5C68;
+  --amber:#F2A93B;
+  --amber-dim:#5A431C;
+  --red:#E86A6A;
+  --radius:14px;
+  --radius-sm:9px;
+  font-size:16px;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{height:100%;}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:'IBM Plex Sans',sans-serif;
+  overflow:hidden;
+  overscroll-behavior:none;
+}
+.mono{font-family:'IBM Plex Mono',monospace;}
+
+#app{
+  position:relative;
+  width:100%;
+  max-width:460px;
+  height:100vh;
+  margin:0 auto;
+  background:var(--bg);
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size:24px 24px;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  border-left:1px solid var(--border-soft);
+  border-right:1px solid var(--border-soft);
+}
+
+/* ---------- HEADER ---------- */
+.topbar{
+  flex:0 0 auto;
+  padding:14px 16px 10px;
+  border-bottom:1px solid var(--border-soft);
+  background:linear-gradient(180deg, rgba(15,26,43,.95), rgba(15,26,43,.75));
+  backdrop-filter:blur(6px);
+  z-index:20;
+}
+.topbar-row{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+.brand{display:flex; align-items:center; gap:9px;}
+.brand-mark{
+  width:26px; height:26px; border:1.5px solid var(--cyan); border-radius:6px;
+  position:relative; flex:0 0 auto;
+}
+.brand-mark::before{
+  content:""; position:absolute; inset:5px; border:1.5px solid var(--cyan); border-radius:3px; opacity:.55;
+}
+.brand-name{font-weight:600; font-size:15px; letter-spacing:.02em;}
+.brand-sub{font-size:10px; color:var(--text-mute); letter-spacing:.14em; text-transform:uppercase; margin-top:1px;}
+
+.iconbtn{
+  width:36px; height:36px; border-radius:10px; border:1px solid var(--border);
+  background:var(--panel-2); color:var(--text-dim); display:flex; align-items:center; justify-content:center;
+  cursor:pointer;
+}
+.iconbtn:active{background:var(--border);}
+.iconbtn.on{border-color:var(--cyan); color:var(--cyan); background:rgba(69,211,232,.09);}
+.iconbtn.warn{border-color:var(--amber); color:var(--amber); background:rgba(242,169,59,.08);}
+
+/* search field on home */
+.search-field{
+  margin-top:12px; display:flex; align-items:center; gap:8px;
+  background:var(--panel-2); border:1px solid var(--border); border-radius:10px; padding:9px 12px;
+}
+.search-field input{
+  flex:1; background:none; border:none; outline:none; color:var(--text); font-family:'IBM Plex Sans'; font-size:14px;
+}
+.search-field input::placeholder{color:var(--text-mute);}
+
+/* ---------- SCREENS ---------- */
+.screen{flex:1; min-height:0; display:none; flex-direction:column;}
+.screen.active{display:flex;}
+
+/* ---------- HOME / LIBRARY ---------- */
+#screen-home{overflow:hidden;}
+.lib-list{flex:1; overflow-y:auto; padding:14px 14px 90px;}
+.section-label{
+  font-family:'IBM Plex Mono'; font-size:10.5px; letter-spacing:.12em; color:var(--text-mute);
+  text-transform:uppercase; margin:14px 4px 8px;
+}
+.section-label:first-child{margin-top:0;}
+
+.file-card{
+  display:flex; align-items:center; gap:12px; padding:12px; border-radius:var(--radius);
+  background:var(--panel); border:1px solid var(--border-soft); margin-bottom:9px; cursor:pointer;
+  transition:border-color .15s;
+}
+.file-card:active{border-color:var(--cyan-dim);}
+.file-badge{
+  width:44px; height:44px; border-radius:10px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;
+  font-family:'IBM Plex Mono'; font-weight:600; font-size:10px; letter-spacing:.03em;
+  border:1px solid var(--border);
+}
+.file-badge.pdf{background:rgba(232,106,106,.1); color:#F08787; border-color:rgba(232,106,106,.35);}
+.file-badge.dxf{background:rgba(69,211,232,.1); color:var(--cyan); border-color:var(--cyan-dim);}
+.file-badge.dwg{background:rgba(242,169,59,.1); color:var(--amber); border-color:var(--amber-dim);}
+.file-info{flex:1; min-width:0;}
+.file-name{font-size:14px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.file-meta{font-size:11.5px; color:var(--text-mute); margin-top:3px; font-family:'IBM Plex Mono';}
+.file-chevron{color:var(--text-mute); flex:0 0 auto;}
+
+.empty-state{
+  margin-top:18px; padding:26px 18px; text-align:center; border:1px dashed var(--border); border-radius:var(--radius);
+  color:var(--text-mute); font-size:13px; line-height:1.5;
+}
+
+.fab{
+  position:absolute; right:18px; bottom:22px; z-index:15;
+  width:56px; height:56px; border-radius:16px; background:var(--cyan); color:#04222A;
+  display:flex; align-items:center; justify-content:center; border:none; cursor:pointer;
+  box-shadow:0 8px 20px rgba(69,211,232,.28);
+}
+.fab:active{transform:scale(.95);}
+#file-input{display:none;}
+
+/* ---------- VIEWER ---------- */
+#screen-viewer{position:relative;}
+.viewer-top{
+  flex:0 0 auto; padding:10px 12px; display:flex; align-items:center; gap:10px;
+  border-bottom:1px solid var(--border-soft); background:var(--panel); z-index:25;
+}
+.viewer-title{flex:1; min-width:0;}
+.viewer-title .name{font-size:13.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.viewer-title .type{font-size:10px; color:var(--text-mute); font-family:'IBM Plex Mono'; letter-spacing:.08em;}
+
+.coord-bar{
+  flex:0 0 auto; display:flex; align-items:center; justify-content:space-between;
+  padding:6px 14px; background:var(--panel-2); border-bottom:1px solid var(--border-soft);
+  font-family:'IBM Plex Mono'; font-size:10.5px; color:var(--cyan); letter-spacing:.03em; z-index:24;
+}
+.coord-bar .dim{color:var(--text-mute);}
+.coord-bar .pagejump{color:var(--text-dim); cursor:pointer;}
+
+.viewer-stage{
+  flex:1; position:relative; overflow:hidden; background:
+    radial-gradient(circle at 50% 30%, rgba(69,211,232,.05), transparent 60%), var(--bg);
+  touch-action:none;
+}
+.stage-empty{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  color:var(--text-mute); font-size:13px; text-align:center; padding:0 30px; line-height:1.5;
+}
+.pan-wrap{
+  position:absolute; top:0; left:0; transform-origin:0 0; will-change:transform;
+}
+.pan-wrap svg, .pan-wrap canvas{display:block; background:#0C1728;}
+
+.pin{
+  position:absolute; transform:translate(-50%,-100%); cursor:pointer; z-index:10;
+}
+.pin-badge{
+  min-width:22px; height:22px; padding:0 5px; border-radius:11px 11px 11px 3px;
+  background:var(--amber); color:#2A1B04; font-family:'IBM Plex Mono'; font-weight:700; font-size:11px;
+  display:flex; align-items:center; justify-content:center; border:1.5px solid #FFD98A;
+  box-shadow:0 3px 8px rgba(0,0,0,.35);
+}
+.pin.flash .pin-badge{animation:pinflash 1.1s ease-out 2;}
+@keyframes pinflash{
+  0%{box-shadow:0 0 0 0 rgba(242,169,59,.7);}
+  70%{box-shadow:0 0 0 14px rgba(242,169,59,0);}
+  100%{box-shadow:0 0 0 0 rgba(242,169,59,0);}
+}
+.hit-flag{
+  position:absolute; width:14px; height:14px; border-radius:50%; background:rgba(69,211,232,.9);
+  border:2px solid #04222A; transform:translate(-50%,-50%); z-index:9; pointer-events:none;
+}
+.hit-flag.pulse{animation:hitpulse 1.1s ease-out 2;}
+@keyframes hitpulse{
+  0%{box-shadow:0 0 0 0 rgba(69,211,232,.7);}
+  70%{box-shadow:0 0 0 16px rgba(69,211,232,0);}
+  100%{box-shadow:0 0 0 0 rgba(69,211,232,0);}
+}
+
+.pinmode-hint{
+  position:absolute; left:50%; top:14px; transform:translateX(-50%); z-index:22;
+  background:var(--amber); color:#2A1B04; font-size:12px; font-weight:600; padding:8px 14px;
+  border-radius:20px; box-shadow:0 6px 16px rgba(0,0,0,.3); display:none; align-items:center; gap:8px;
+}
+.pinmode-hint.show{display:flex;}
+.pinmode-hint .x{cursor:pointer; opacity:.75;}
+
+.viewer-bottom{
+  flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:10px 14px calc(10px + env(safe-area-inset-bottom)); background:var(--panel);
+  border-top:1px solid var(--border-soft); z-index:24;
+}
+.zoomctl{display:flex; align-items:center; gap:6px; background:var(--panel-2); border:1px solid var(--border); border-radius:10px; padding:4px;}
+.zoomctl button{width:30px; height:30px; border:none; background:none; color:var(--text-dim); font-size:16px; cursor:pointer; border-radius:7px;}
+.zoomctl button:active{background:var(--border);}
+.zoomctl .pct{font-family:'IBM Plex Mono'; font-size:11.5px; color:var(--text-dim); width:44px; text-align:center;}
+
+.pin-add-btn{
+  display:flex; align-items:center; gap:7px; background:var(--amber); color:#2A1B04; border:none;
+  padding:10px 16px; border-radius:11px; font-weight:600; font-size:13.5px; cursor:pointer;
+}
+.pin-add-btn.active{background:var(--panel-2); color:var(--amber); border:1px solid var(--amber);}
+
+.pinlist-btn{
+  display:flex; align-items:center; gap:6px; background:var(--panel-2); border:1px solid var(--border); color:var(--text-dim);
+  padding:10px 12px; border-radius:11px; font-size:12.5px; font-family:'IBM Plex Mono'; cursor:pointer;
+}
+
+/* ---------- SLIDE PANELS (search / pins / notes) ---------- */
+.sheet-backdrop{
+  position:absolute; inset:0; background:rgba(4,9,17,.55); z-index:40; opacity:0; pointer-events:none; transition:opacity .18s;
+}
+.sheet-backdrop.show{opacity:1; pointer-events:auto;}
+.sheet{
+  position:absolute; left:0; right:0; bottom:0; z-index:41; background:var(--panel);
+  border-top:1px solid var(--border); border-radius:20px 20px 0 0; box-shadow:0 -12px 30px rgba(0,0,0,.4);
+  max-height:78%; display:flex; flex-direction:column; transform:translateY(100%); transition:transform .22s cubic-bezier(.2,.9,.3,1);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.sheet.show{transform:translateY(0);}
+.sheet-handle{width:36px; height:4px; background:var(--border); border-radius:3px; margin:10px auto 4px;}
+.sheet-head{display:flex; align-items:center; justify-content:space-between; padding:8px 18px 12px; border-bottom:1px solid var(--border-soft);}
+.sheet-title{font-weight:600; font-size:15px;}
+.sheet-close{color:var(--text-mute); cursor:pointer; font-size:20px; line-height:1;}
+.sheet-body{overflow-y:auto; padding:14px 18px 22px;}
+
+.search-input-row{display:flex; gap:8px; align-items:center; margin-bottom:12px;}
+.search-input-row input{
+  flex:1; background:var(--panel-2); border:1px solid var(--border); border-radius:10px; padding:10px 12px;
+  color:var(--text); font-size:14px; outline:none;
+}
+.search-input-row input:focus{border-color:var(--cyan);}
+.search-count{font-size:11px; color:var(--text-mute); font-family:'IBM Plex Mono'; margin-bottom:10px;}
+.result-row{
+  display:flex; align-items:center; gap:10px; padding:10px 10px; border-radius:10px; cursor:pointer; margin-bottom:6px;
+  border:1px solid transparent;
+}
+.result-row:active{background:var(--panel-2); border-color:var(--border);}
+.result-icon{width:30px; height:30px; border-radius:8px; background:var(--panel-2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; flex:0 0 auto; color:var(--cyan); font-size:12px; font-family:'IBM Plex Mono'; font-weight:600;}
+.result-text{flex:1; min-width:0; font-size:13.5px; line-height:1.4;}
+.result-text mark{background:rgba(242,169,59,.35); color:var(--amber); border-radius:3px; padding:0 1px;}
+.result-loc{font-size:10.5px; color:var(--text-mute); font-family:'IBM Plex Mono'; margin-top:2px;}
+
+.pin-row{display:flex; gap:11px; padding:11px; border-radius:12px; border:1px solid var(--border-soft); margin-bottom:8px; cursor:pointer; background:var(--panel-2);}
+.pin-row .num{width:26px; height:26px; border-radius:8px 8px 8px 2px; background:var(--amber); color:#2A1B04; font-family:'IBM Plex Mono'; font-weight:700; font-size:12px; display:flex; align-items:center; justify-content:center; flex:0 0 auto;}
+.pin-row .body{flex:1; min-width:0;}
+.pin-row .t{font-size:13.5px; font-weight:600;}
+.pin-row .d{font-size:12px; color:var(--text-dim); margin-top:2px; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;}
+.pin-row .loc{font-size:10px; color:var(--text-mute); font-family:'IBM Plex Mono'; margin-top:4px;}
+.pin-row .del{color:var(--text-mute); font-size:16px; padding:4px;}
+
+/* note editor */
+.field-label{font-size:11px; color:var(--text-mute); text-transform:uppercase; letter-spacing:.08em; font-family:'IBM Plex Mono'; margin:14px 0 6px;}
+.field-label:first-child{margin-top:0;}
+.field-input, .field-textarea{
+  width:100%; background:var(--panel-2); border:1px solid var(--border); border-radius:10px; padding:11px 12px;
+  color:var(--text); font-family:'IBM Plex Sans'; font-size:14px; outline:none;
+}
+.field-input:focus, .field-textarea:focus{border-color:var(--amber);}
+.field-textarea{resize:vertical; min-height:80px; line-height:1.5;}
+.sheet-actions{display:flex; gap:10px; margin-top:18px;}
+.btn{flex:1; padding:12px; border-radius:11px; font-weight:600; font-size:14px; border:none; cursor:pointer; text-align:center;}
+.btn-primary{background:var(--amber); color:#2A1B04;}
+.btn-ghost{background:var(--panel-2); color:var(--text-dim); border:1px solid var(--border);}
+.btn-danger{background:rgba(232,106,106,.12); color:var(--red); border:1px solid rgba(232,106,106,.4);}
+
+.toast{
+  position:absolute; left:50%; bottom:96px; transform:translateX(-50%) translateY(10px); z-index:60;
+  background:var(--panel-2); border:1px solid var(--border); color:var(--text); font-size:12.5px;
+  padding:9px 16px; border-radius:20px; opacity:0; pointer-events:none; transition:all .2s;
+}
+.toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+/* dwg convert notice */
+.notice{
+  margin:0 0 12px; padding:11px 12px; border-radius:10px; background:rgba(242,169,59,.08);
+  border:1px solid var(--amber-dim); color:#F2C87A; font-size:12px; line-height:1.5;
+}
+
+::-webkit-scrollbar{width:0; height:0;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ===================== HOME ===================== -->
+  <div class="screen active" id="screen-home">
+    <div class="topbar">
+      <div class="topbar-row">
+        <div class="brand">
+          <div class="brand-mark"></div>
+          <div>
+            <div class="brand-name">Fieldmark</div>
+            <div class="brand-sub">Drawing viewer</div>
+          </div>
+        </div>
+        <div class="iconbtn" id="btn-lib-search-toggle">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </div>
+      </div>
+      <div class="search-field" id="lib-search-field" style="display:none;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="#8CA0BE" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke="#8CA0BE" stroke-width="2" stroke-linecap="round"/></svg>
+        <input id="lib-search-input" placeholder="Filter files by name…">
+      </div>
+    </div>
+    <div class="lib-list" id="lib-list"></div>
+    <button class="fab" id="btn-upload">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#04222A" stroke-width="2.4" stroke-linecap="round"/></svg>
+    </button>
+    <input type="file" id="file-input" accept=".pdf,.dxf,.dwg">
+  </div>
+
+  <!-- ===================== VIEWER ===================== -->
+  <div class="screen" id="screen-viewer">
+    <div class="viewer-top">
+      <div class="iconbtn" id="btn-back">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="viewer-title">
+        <div class="name" id="viewer-filename">—</div>
+        <div class="type" id="viewer-filetype">—</div>
+      </div>
+      <div class="iconbtn" id="btn-search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+      <div class="iconbtn" id="btn-pinlist">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 21s-7-6.1-7-11a7 7 0 0114 0c0 4.9-7 11-7 11z" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="10" r="2.4" stroke="currentColor" stroke-width="2"/></svg>
+      </div>
+    </div>
+
+    <div class="coord-bar">
+      <span>X: <span id="coord-x" class="dim">0.0</span>&nbsp;&nbsp;Y: <span id="coord-y" class="dim">0.0</span></span>
+      <span id="page-indicator" class="pagejump" style="display:none;"></span>
+    </div>
+
+    <div class="viewer-stage" id="viewer-stage">
+      <div class="stage-empty" id="stage-empty">Open a file from your library to view it here.</div>
+      <div class="pan-wrap" id="pan-wrap" style="display:none;"></div>
+      <div class="pinmode-hint" id="pinmode-hint">
+        <span>Tap anywhere on the drawing to drop a pin</span>
+        <span class="x" id="pinmode-cancel">✕</span>
+      </div>
+    </div>
+
+    <div class="viewer-bottom">
+      <div class="zoomctl">
+        <button id="zoom-out">−</button>
+        <span class="pct" id="zoom-pct">100%</span>
+        <button id="zoom-in">+</button>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <div class="pinlist-btn" id="btn-fit">FIT</div>
+        <button class="pin-add-btn" id="btn-addpin">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 21s-7-6.1-7-11a7 7 0 0114 0c0 4.9-7 11-7 11z" stroke="currentColor" stroke-width="2.2"/></svg>
+          Pin
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SEARCH SHEET ===================== -->
+  <div class="sheet-backdrop" id="search-backdrop"></div>
+  <div class="sheet" id="search-sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-head">
+      <div class="sheet-title">Search this drawing</div>
+      <div class="sheet-close" id="search-close">✕</div>
+    </div>
+    <div class="sheet-body">
+      <div class="search-input-row">
+        <input id="search-input" placeholder="Search text or numbers…" autocomplete="off">
+      </div>
+      <div class="search-count" id="search-count"></div>
+      <div id="search-results"></div>
+    </div>
+  </div>
+
+  <!-- ===================== PINS SHEET ===================== -->
+  <div class="sheet-backdrop" id="pins-backdrop"></div>
+  <div class="sheet" id="pins-sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-head">
+      <div class="sheet-title">Pins on this drawing</div>
+      <div class="sheet-close" id="pins-close">✕</div>
+    </div>
+    <div class="sheet-body" id="pins-list"></div>
+  </div>
+
+  <!-- ===================== NOTE EDITOR SHEET ===================== -->
+  <div class="sheet-backdrop" id="note-backdrop"></div>
+  <div class="sheet" id="note-sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-head">
+      <div class="sheet-title" id="note-sheet-title">New pin</div>
+      <div class="sheet-close" id="note-close">✕</div>
+    </div>
+    <div class="sheet-body">
+      <div class="field-label">Title</div>
+      <input class="field-input" id="note-title" placeholder="e.g. Damaged column base">
+      <div class="field-label">Description</div>
+      <textarea class="field-textarea" id="note-desc" placeholder="Describe what needs attention here…"></textarea>
+      <div class="sheet-actions">
+        <div class="btn btn-danger" id="note-delete" style="display:none;">Delete pin</div>
+        <div class="btn btn-primary" id="note-save">Save note</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ================= OFFLINE STORAGE POLYFILL =================
+   window.storage is provided by the Claude.ai artifact host. Running as a
+   standalone app (APK/PWA) there is no such host, so provide the same
+   get/set/delete/list API backed by the device's localStorage instead. */
+if(!window.storage){
+  window.storage = (function(){
+    const NS = 'fieldmark:';
+    function fullKey(key, shared){ return NS + (shared ? 'shared:' : 'priv:') + key; }
+    return {
+      async get(key, shared){
+        const raw = localStorage.getItem(fullKey(key, shared));
+        if(raw === null) return null;
+        return { key, value: raw, shared: !!shared };
+      },
+      async set(key, value, shared){
+        localStorage.setItem(fullKey(key, shared), value);
+        return { key, value, shared: !!shared };
+      },
+      async delete(key, shared){
+        const existed = localStorage.getItem(fullKey(key, shared)) !== null;
+        localStorage.removeItem(fullKey(key, shared));
+        return { key, deleted: existed, shared: !!shared };
+      },
+      async list(prefix, shared){
+        const base = NS + (shared ? 'shared:' : 'priv:');
+        const full = base + (prefix || '');
+        const keys = [];
+        for(let i=0;i<localStorage.length;i++){
+          const lk = localStorage.key(i);
+          if(lk && lk.indexOf(full) === 0) keys.push(lk.slice(base.length));
+        }
+        return { keys, prefix, shared: !!shared };
+      }
+    };
+  })();
+}
+
+/* ================= STATE ================= */
+let files = [];          // {id, name, ext, type, addedAt}
+let current = null;      // active file object (with runtime content)
+let pins = {};           // fileName -> [{id,num,xPct,yPct,page,title,desc,ts}]
+let mode = 'browse';     // 'browse' | 'pin'
+let editingPinId = null;
+let searchIndex = [];    // current file search entries
+let view = { scale:1, tx:0, ty:0 };
+let pdfDoc = null, pdfPage = 1, pdfPageCount = 1, pdfViewport = null, pdfRendering = false;
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.js";
+
+/* ================= STORAGE HELPERS ================= */
+async function storeGet(key){
+  try{ const r = await window.storage.get(key,false); return r ? JSON.parse(r.value) : null; }
+  catch(e){ return null; }
+}
+async function storeSet(key,val){
+  try{ await window.storage.set(key, JSON.stringify(val), false); }catch(e){}
+}
+async function loadLibraryMeta(){
+  try{
+    const r = await window.storage.list('filemeta:', false);
+    if(!r || !r.keys) return;
+    for(const k of r.keys){
+      const meta = await storeGet(k);
+      if(meta && !files.find(f=>f.name===meta.name)){
+        files.push(meta);
+      }
+    }
+  }catch(e){}
+}
+async function saveFileMeta(f){
+  await storeSet('filemeta:'+f.name, {name:f.name, ext:f.ext, addedAt:f.addedAt});
+}
+async function loadPinsFor(name){
+  const p = await storeGet('pins:'+name);
+  pins[name] = p || [];
+}
+async function savePinsFor(name){
+  await storeSet('pins:'+name, pins[name]||[]);
+}
+
+/* ================= UTIL ================= */
+function el(id){ return document.getElementById(id); }
+function show(id){ el(id).classList.add('active'); }
+function hideAll(){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); }
+function toast(msg){
+  const t = el('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._h); toast._h = setTimeout(()=>t.classList.remove('show'), 1800);
+}
+function fmtBadge(ext){ return ext.toUpperCase(); }
+function escapeHtml(s){ return s.replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ================= LIBRARY RENDER ================= */
+function renderLibrary(filterText){
+  const list = el('lib-list');
+  const f = (filterText||'').toLowerCase();
+  const shown = files.filter(x=>x.name.toLowerCase().includes(f));
+  if(shown.length===0){
+    list.innerHTML = '<div class="empty-state">No drawings yet.<br>Tap the + button to open a PDF, DXF or DWG file.</div>';
+    return;
+  }
+  list.innerHTML = '<div class="section-label">Your drawings · '+shown.length+'</div>' +
+    shown.map(f=>{
+      const p = pins[f.name] || [];
+      const metaTxt = p.length ? (p.length+' pin'+(p.length>1?'s':'')) : 'No pins yet';
+      return '<div class="file-card" data-name="'+escapeHtml(f.name)+'">'+
+        '<div class="file-badge '+f.ext+'">'+fmtBadge(f.ext)+'</div>'+
+        '<div class="file-info"><div class="file-name">'+escapeHtml(f.name)+'</div>'+
+        '<div class="file-meta">'+metaTxt+'</div></div>'+
+        '<div class="file-chevron"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>'+
+      '</div>';
+    }).join('');
+  list.querySelectorAll('.file-card').forEach(c=>{
+    c.addEventListener('click', ()=>{
+      const name = c.getAttribute('data-name');
+      const f = files.find(x=>x.name===name);
+      openLibraryEntry(f);
+    });
+  });
+}
+
+function openLibraryEntry(f){
+  if(!f._raw){
+    // metadata restored from storage but binary not in memory this session
+    toast('Re-select "'+f.name+'" to reopen it — its notes and pins are saved.');
+    el('file-input').click();
+    el('file-input')._pendingReopen = f.name;
+    return;
+  }
+  openFile(f);
+}
+
+/* ================= FILE INTAKE ================= */
+el('btn-upload').addEventListener('click', ()=>{ el('file-input')._pendingReopen=null; el('file-input').click(); });
+el('file-input').addEventListener('change', async (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  if(!['pdf','dxf','dwg'].includes(ext)){ toast('Unsupported file type.'); return; }
+
+  const rec = { name:file.name, ext, addedAt:Date.now(), _raw:file };
+  const existingIdx = files.findIndex(x=>x.name===rec.name);
+  if(existingIdx>=0) files[existingIdx] = Object.assign({}, files[existingIdx], rec);
+  else files.push(rec);
+  await saveFileMeta(rec);
+  if(!pins[rec.name]) await loadPinsFor(rec.name);
+  renderLibrary(el('lib-search-input').value);
+  openFile(rec);
+  e.target.value = '';
+});
+
+el('btn-lib-search-toggle').addEventListener('click', ()=>{
+  const box = el('lib-search-field');
+  box.style.display = box.style.display==='none' ? 'flex' : 'none';
+  if(box.style.display==='flex') el('lib-search-input').focus();
+});
+el('lib-search-input').addEventListener('input', (e)=> renderLibrary(e.target.value));
+
+/* ================= OPEN FILE / VIEWER SETUP ================= */
+async function openFile(f){
+  current = f;
+  pdfDoc = null; pdfPage = 1; pdfPageCount = 1; searchIndex = [];
+  if(!pins[f.name]) await loadPinsFor(f.name);
+
+  hideAll(); show('screen-viewer');
+  el('viewer-filename').textContent = f.name;
+  el('viewer-filetype').textContent = f.ext.toUpperCase() + (f.ext==='dwg' ? ' · converted preview' : ' · drawing');
+  el('page-indicator').style.display = 'none';
+  el('pan-wrap').style.display = 'none';
+  el('stage-empty').style.display = 'flex';
+  el('stage-empty').textContent = 'Loading '+f.name+'…';
+  view = { scale:1, tx:0, ty:0 };
+  applyTransform();
+  exitPinMode();
+
+  try{
+    if(f.ext === 'pdf') await loadPdf(f);
+    else if(f.ext === 'dxf') await loadDxfFile(f);
+    else await loadDwgPreview(f);
+  }catch(err){
+    console.error(err);
+    el('stage-empty').textContent = 'Could not open this file. It may be corrupted or in an unsupported variant.';
+  }
+}
+
+el('btn-back').addEventListener('click', ()=>{ hideAll(); show('screen-home'); renderLibrary(el('lib-search-input').value); });
+
+/* ================= PDF HANDLING ================= */
+async function loadPdf(f){
+  const buf = await f._raw.arrayBuffer();
+  pdfDoc = await pdfjsLib.getDocument({data:buf}).promise;
+  pdfPageCount = pdfDoc.numPages;
+  pdfPage = 1;
+  el('page-indicator').style.display = 'inline';
+  await renderPdfPage(pdfPage);
+  await buildPdfSearchIndex();
+  fitToScreen();
+}
+
+async function renderPdfPage(num){
+  if(pdfRendering) return;
+  pdfRendering = true;
+  const page = await pdfDoc.getPage(num);
+  const baseViewport = page.getViewport({scale:1});
+  const targetWidth = 900; // natural render resolution
+  const scale = targetWidth / baseViewport.width;
+  pdfViewport = page.getViewport({scale});
+
+  const canvas = document.createElement('canvas');
+  canvas.width = pdfViewport.width;
+  canvas.height = pdfViewport.height;
+  const ctx = canvas.getContext('2d');
+  await page.render({canvasContext:ctx, viewport:pdfViewport}).promise;
+
+  const wrap = el('pan-wrap');
+  wrap.innerHTML = '';
+  wrap.style.width = canvas.width+'px';
+  wrap.style.height = canvas.height+'px';
+  wrap.appendChild(canvas);
+  el('stage-empty').style.display = 'none';
+  wrap.style.display = 'block';
+  el('page-indicator').textContent = 'PAGE '+num+' / '+pdfPageCount;
+  pdfRendering = false;
+  renderPinsForCurrentPage();
+}
+
+async function buildPdfSearchIndex(){
+  searchIndex = [];
+  for(let p=1; p<=pdfPageCount; p++){
+    const page = await pdfDoc.getPage(p);
+    const content = await page.getTextContent();
+    const vp = page.getViewport({scale:1});
+    content.items.forEach(item=>{
+      if(!item.str || !item.str.trim()) return;
+      searchIndex.push({
+        page:p, text:item.str, tx:item.transform, pageHeight:vp.height, pageWidth:vp.width
+      });
+    });
+  }
+}
+
+el('page-indicator').addEventListener('click', async ()=>{
+  if(!pdfDoc) return;
+  pdfPage = pdfPage>=pdfPageCount ? 1 : pdfPage+1;
+  await renderPdfPage(pdfPage);
+  fitToScreen();
+});
+
+/* ================= DXF HANDLING ================= */
+function parseDxf(text){
+  const rawLines = text.split(/\r\n|\r|\n/);
+  // DXF is strictly pairs of (group code, value) lines; drop a trailing blank line if present.
+  while(rawLines.length && rawLines[rawLines.length-1].trim()==='') rawLines.pop();
+  const pairs = [];
+  for(let i=0;i+1<rawLines.length;i+=2){
+    pairs.push([parseInt(rawLines[i].trim(),10), rawLines[i+1].trim()]);
+  }
+
+  const SIMPLE_TYPES = ['LINE','CIRCLE','ARC','LWPOLYLINE','TEXT','MTEXT'];
+  const entities = [];
+  let section = null;      // name of current SECTION once known (from the code-2 pair right after "0 SECTION")
+  let awaitingSectionName = false;
+  let cur = null;          // entity currently being read (LINE/CIRCLE/ARC/LWPOLYLINE/TEXT/MTEXT)
+  let inPoly = false;      // inside legacy POLYLINE ... SEQEND
+  let polyAccum = null;    // {type:'LWPOLYLINE', pts:[], closed:false}
+  let vtx = null;          // temp vertex being read inside a legacy POLYLINE
+
+  function flushCur(){ if(cur && SIMPLE_TYPES.includes(cur.type)) entities.push(cur); cur = null; }
+  function flushVertex(){ if(vtx && isFinite(vtx.x) && isFinite(vtx.y) && polyAccum) polyAccum.pts.push([vtx.x, vtx.y]); vtx = null; }
+
+  for(let i=0;i<pairs.length;i++){
+    const code = pairs[i][0], val = pairs[i][1];
+
+    if(code===2 && awaitingSectionName){
+      section = val;
+      awaitingSectionName = false;
+      continue;
+    }
+
+    if(code===0){
+      // any group-0 marker ends whatever we were previously reading
+      flushCur();
+
+      if(val==='SECTION'){ awaitingSectionName = true; continue; }
+      if(val==='ENDSEC'){ section = null; continue; }
+      if(val==='EOF'){ break; }
+
+      if(section!=='ENTITIES' && section!=='BLOCK' && section!=='BLOCKS'){ continue; }
+
+      if(val==='POLYLINE'){
+        inPoly = true;
+        polyAccum = {type:'LWPOLYLINE', pts:[], closed:false};
+        continue;
+      }
+      if(val==='VERTEX' && inPoly){
+        flushVertex();
+        vtx = {x:undefined, y:undefined};
+        continue;
+      }
+      if(val==='SEQEND' && inPoly){
+        flushVertex();
+        if(polyAccum && polyAccum.pts.length>1) entities.push(polyAccum);
+        inPoly = false; polyAccum = null;
+        continue;
+      }
+      if(SIMPLE_TYPES.includes(val)){
+        cur = {type:val, pts:[]};
+      }
+      continue;
+    }
+
+    if(vtx){
+      if(code===10) vtx.x = parseFloat(val);
+      if(code===20) vtx.y = parseFloat(val);
+      continue;
+    }
+    if(inPoly && polyAccum){
+      if(code===70) polyAccum.closed = (parseInt(val,10) & 1) === 1;
+      continue;
+    }
+
+    if(!cur) continue;
+    if(cur.type==='LINE'){
+      if(code===10) cur.x1=parseFloat(val); if(code===20) cur.y1=parseFloat(val);
+      if(code===11) cur.x2=parseFloat(val); if(code===21) cur.y2=parseFloat(val);
+    } else if(cur.type==='CIRCLE'){
+      if(code===10) cur.cx=parseFloat(val); if(code===20) cur.cy=parseFloat(val); if(code===40) cur.r=parseFloat(val);
+    } else if(cur.type==='ARC'){
+      if(code===10) cur.cx=parseFloat(val); if(code===20) cur.cy=parseFloat(val); if(code===40) cur.r=parseFloat(val);
+      if(code===50) cur.a1=parseFloat(val); if(code===51) cur.a2=parseFloat(val);
+    } else if(cur.type==='LWPOLYLINE'){
+      if(code===10){ cur._px = parseFloat(val); }
+      if(code===20){ cur.pts.push([cur._px, parseFloat(val)]); }
+      if(code===70) cur.closed = (parseInt(val,10) & 1) === 1;
+    } else if(cur.type==='TEXT' || cur.type==='MTEXT'){
+      if(code===10) cur.x=parseFloat(val); if(code===20) cur.y=parseFloat(val);
+      if(code===40) cur.h=parseFloat(val);
+      if(code===1 || code===3) cur.text = (cur.text||'') + val.replace(/\\P/g,' ');
+    }
+  }
+  flushCur();
+  return entities;
+}
+
+function dxfToSvg(entities){
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  function reg(x,y){ if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y; }
+  entities.forEach(e=>{
+    if(e.type==='LINE'){ reg(e.x1,e.y1); reg(e.x2,e.y2); }
+    else if(e.type==='CIRCLE'){ reg(e.cx-e.r,e.cy-e.r); reg(e.cx+e.r,e.cy+e.r); }
+    else if(e.type==='ARC'){ reg(e.cx-e.r,e.cy-e.r); reg(e.cx+e.r,e.cy+e.r); }
+    else if(e.type==='LWPOLYLINE'){ e.pts.forEach(p=>reg(p[0],p[1])); }
+    else if(e.type==='TEXT'||e.type==='MTEXT'){ reg(e.x,e.y); }
+  });
+  if(!isFinite(minX)){ minX=0;minY=0;maxX=100;maxY=100; }
+  const padX = (maxX-minX)*0.05 || 5, padY = (maxY-minY)*0.05 || 5;
+  minX-=padX; maxX+=padX; minY-=padY; maxY+=padY;
+  const w = maxX-minX, h = maxY-minY;
+  const flip = y => (maxY+minY) - y; // flip so text renders upright, y-down
+
+  const searchEntries = [];
+  let body = '';
+  entities.forEach(e=>{
+    if(e.type==='LINE' && isFinite(e.x1)){
+      body += '<line x1="'+e.x1+'" y1="'+flip(e.y1)+'" x2="'+e.x2+'" y2="'+flip(e.y2)+'" stroke="#5FA9C2" stroke-width="'+(w/500)+'" />';
+    } else if(e.type==='CIRCLE' && isFinite(e.cx)){
+      body += '<circle cx="'+e.cx+'" cy="'+flip(e.cy)+'" r="'+e.r+'" stroke="#5FA9C2" fill="none" stroke-width="'+(w/500)+'" />';
+    } else if(e.type==='ARC' && isFinite(e.cx)){
+      body += '<circle cx="'+e.cx+'" cy="'+flip(e.cy)+'" r="'+e.r+'" stroke="#3E7C93" fill="none" stroke-width="'+(w/500)+'" stroke-dasharray="'+(w/120)+' '+(w/160)+'" />';
+    } else if(e.type==='LWPOLYLINE' && e.pts.length){
+      const d = e.pts.map((p,i)=> (i===0?'M':'L')+p[0]+','+flip(p[1])).join(' ') + (e.closed?' Z':'');
+      body += '<path d="'+d+'" stroke="#7FC1D6" fill="none" stroke-width="'+(w/500)+'" stroke-linejoin="round" />';
+    } else if((e.type==='TEXT'||e.type==='MTEXT') && e.text && isFinite(e.x)){
+      const fh = e.h || (h/60);
+      body += '<text x="'+e.x+'" y="'+flip(e.y)+'" font-size="'+fh+'" fill="#CFE6F2" font-family="IBM Plex Mono">'+escapeHtml(e.text)+'</text>';
+      searchEntries.push({text:e.text, xPct: ((e.x-minX)/w*100), yPct: ((flip(e.y)-minY)/h*100)});
+    }
+  });
+  const svg = '<svg viewBox="'+minX+' '+minY+' '+w+' '+h+'" width="1000" height="'+(1000*h/w)+'" xmlns="http://www.w3.org/2000/svg">'+
+    '<rect x="'+minX+'" y="'+minY+'" width="'+w+'" height="'+h+'" fill="#0C1728"/>'+ body + '</svg>';
+  return {svg, searchEntries, minX, minY, w, h};
+}
+
+async function loadDxfFile(f){
+  const text = await f._raw.text();
+  const entities = parseDxf(text);
+  if(entities.length===0){
+    el('stage-empty').style.display = 'flex';
+    el('stage-empty').textContent = 'No LINE/CIRCLE/ARC/POLYLINE/TEXT entities found at the top level of this DXF — geometry nested inside BLOCK inserts isn\u2019t expanded yet in this prototype.';
+    el('pan-wrap').style.display = 'none';
+    return;
+  }
+  const {svg, searchEntries} = dxfToSvg(entities);
+  const wrap = el('pan-wrap');
+  wrap.innerHTML = svg;
+  const svgEl = wrap.querySelector('svg');
+  wrap.style.width = svgEl.getAttribute('width')+'px';
+  wrap.style.height = svgEl.getAttribute('height')+'px';
+  wrap.style.display = 'block';
+  el('stage-empty').style.display = 'none';
+  searchIndex = searchEntries.map(s=>({page:1, text:s.text, xPct:s.xPct, yPct:s.yPct, isDxf:true}));
+  fitToScreen();
+  renderPinsForCurrentPage();
+  toast(entities.length+' entities loaded.');
+}
+
+async function loadDwgPreview(f){
+  el('stage-empty').textContent = 'Converting DWG…';
+  await new Promise(r=>setTimeout(r,450));
+  // Native DWG parsing requires a conversion step (proprietary binary format).
+  // We render a representative sample drawing so the pin/search/notes UX can be demonstrated end to end.
+  const sample = sampleDxfText();
+  const entities = parseDxf(sample);
+  const {svg, searchEntries} = dxfToSvg(entities);
+  const wrap = el('pan-wrap');
+  wrap.innerHTML = svg;
+  const svgEl = wrap.querySelector('svg');
+  wrap.style.width = svgEl.getAttribute('width')+'px';
+  wrap.style.height = svgEl.getAttribute('height')+'px';
+  wrap.style.display = 'block';
+  el('stage-empty').style.display = 'none';
+  searchIndex = searchEntries.map(s=>({page:1, text:s.text, xPct:s.xPct, yPct:s.yPct, isDxf:true}));
+  fitToScreen();
+  renderPinsForCurrentPage();
+  toast('DWG shown as a converted preview — see note below on production DWG support.');
+}
+
+function sampleDxfText(){
+  // Minimal ASCII DXF: a simple floor outline with two rooms and text labels/numbers.
+  return [
+    '0','SECTION','2','ENTITIES',
+    '0','LWPOLYLINE','90','5','70','1','10','0','20','0','10','800','20','0','10','800','20','500','10','0','20','500','10','0','20','0',
+    '0','LINE','10','400','20','0','11','400','21','500',
+    '0','LINE','10','0','20','250','11','800','21','250',
+    '0','CIRCLE','10','120','20','120','40','18',
+    '0','CIRCLE','10','680','20','380','40','18',
+    '0','TEXT','10','60','20','420','40','22','1','ROOM 101',
+    '0','TEXT','10','460','20','420','40','22','1','ROOM 102',
+    '0','TEXT','10','60','20','60','40','18','1','GRID A-1',
+    '0','TEXT','10','620','20','60','40','18','1','GRID B-4',
+    '0','TEXT','10','360','20','510','40','16','1','DOOR 08',
+    '0','ENDSEC','0','EOF'
+  ].join('\n');
+}
+
+/* ================= PAN / ZOOM ================= */
+const stage = el('viewer-stage');
+function applyTransform(){
+  el('pan-wrap').style.transform = 'translate('+view.tx+'px,'+view.ty+'px) scale('+view.scale+')';
+  el('zoom-pct').textContent = Math.round(view.scale*100)+'%';
+}
+function fitToScreen(){
+  const wrap = el('pan-wrap');
+  const cw = wrap.offsetWidth, ch = wrap.offsetHeight;
+  if(!cw || !ch) return;
+  const stageRect = stage.getBoundingClientRect();
+  const s = Math.min((stageRect.width-24)/cw, (stageRect.height-24)/ch);
+  view.scale = Math.max(0.05, s);
+  view.tx = (stageRect.width - cw*view.scale)/2;
+  view.ty = (stageRect.height - ch*view.scale)/2;
+  applyTransform();
+}
+el('btn-fit').addEventListener('click', fitToScreen);
+el('zoom-in').addEventListener('click', ()=>{ zoomBy(1.25); });
+el('zoom-out').addEventListener('click', ()=>{ zoomBy(0.8); });
+function zoomBy(f, cx, cy){
+  const stageRect = stage.getBoundingClientRect();
+  cx = cx!==undefined ? cx : stageRect.width/2;
+  cy = cy!==undefined ? cy : stageRect.height/2;
+  const newScale = Math.min(8, Math.max(0.05, view.scale*f));
+  const ratio = newScale/view.scale;
+  view.tx = cx - (cx-view.tx)*ratio;
+  view.ty = cy - (cy-view.ty)*ratio;
+  view.scale = newScale;
+  applyTransform();
+}
+
+let dragging=false, lastX=0, lastY=0, pinchDist=null;
+stage.addEventListener('pointerdown', (e)=>{
+  if(mode==='pin'){ return; } // handled in click handler below
+  dragging = true; lastX=e.clientX; lastY=e.clientY;
+  stage.setPointerCapture(e.pointerId);
+});
+stage.addEventListener('pointermove', (e)=>{
+  updateCoordReadout(e);
+  if(!dragging || mode==='pin') return;
+  view.tx += (e.clientX-lastX); view.ty += (e.clientY-lastY);
+  lastX=e.clientX; lastY=e.clientY;
+  applyTransform();
+});
+stage.addEventListener('pointerup', ()=>{ dragging=false; });
+stage.addEventListener('pointercancel', ()=>{ dragging=false; });
+stage.addEventListener('wheel', (e)=>{
+  e.preventDefault();
+  const r = stage.getBoundingClientRect();
+  zoomBy(e.deltaY<0?1.1:0.9, e.clientX-r.left, e.clientY-r.top);
+}, {passive:false});
+
+// basic pinch to zoom
+stage.addEventListener('touchmove', (e)=>{
+  if(e.touches.length===2){
+    e.preventDefault();
+    const d = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+    const r = stage.getBoundingClientRect();
+    const cx = (e.touches[0].clientX+e.touches[1].clientX)/2 - r.left;
+    const cy = (e.touches[0].clientY+e.touches[1].clientY)/2 - r.top;
+    if(pinchDist){ zoomBy(d/pinchDist, cx, cy); }
+    pinchDist = d;
+  }
+}, {passive:false});
+stage.addEventListener('touchend', ()=>{ pinchDist=null; });
+
+function updateCoordReadout(e){
+  const wrap = el('pan-wrap');
+  const rect = wrap.getBoundingClientRect();
+  if(!rect.width) return;
+  const xPct = ((e.clientX-rect.left)/rect.width)*100;
+  const yPct = ((e.clientY-rect.top)/rect.height)*100;
+  el('coord-x').textContent = xPct.toFixed(1);
+  el('coord-y').textContent = yPct.toFixed(1);
+}
+
+/* ================= PIN MODE ================= */
+el('btn-addpin').addEventListener('click', ()=>{
+  if(mode==='pin') exitPinMode(); else enterPinMode();
+});
+el('pinmode-cancel').addEventListener('click', exitPinMode);
+function enterPinMode(){
+  if(!current || (current.ext==='pdf' && !pdfDoc) ) { if(el('stage-empty').style.display!=='none'){ toast('Open a drawing first.'); return; } }
+  mode='pin';
+  el('btn-addpin').classList.add('active');
+  el('pinmode-hint').classList.add('show');
+}
+function exitPinMode(){
+  mode='browse';
+  el('btn-addpin').classList.remove('active');
+  el('pinmode-hint').classList.remove('show');
+}
+stage.addEventListener('click', (e)=>{
+  if(mode!=='pin') return;
+  const wrap = el('pan-wrap');
+  const rect = wrap.getBoundingClientRect();
+  if(!rect.width) return;
+  const xPct = ((e.clientX-rect.left)/rect.width)*100;
+  const yPct = ((e.clientY-rect.top)/rect.height)*100;
+  if(xPct<0||xPct>100||yPct<0||yPct>100) return;
+  openNoteEditor(null, xPct, yPct);
+});
+
+/* ================= PINS RENDER ================= */
+function currentPageForPin(){ return current && current.ext==='pdf' ? pdfPage : 1; }
+function renderPinsForCurrentPage(){
+  const wrap = el('pan-wrap');
+  wrap.querySelectorAll('.pin').forEach(p=>p.remove());
+  if(!current) return;
+  const list = pins[current.name] || [];
+  const page = currentPageForPin();
+  list.filter(p=>(p.page||1)===page).forEach(p=>{
+    const d = document.createElement('div');
+    d.className='pin';
+    d.style.left = p.xPct+'%';
+    d.style.top = p.yPct+'%';
+    d.innerHTML = '<div class="pin-badge">'+p.num+'</div>';
+    d.addEventListener('click', (ev)=>{ ev.stopPropagation(); if(mode==='pin') return; openNoteEditor(p); });
+    wrap.appendChild(d);
+  });
+}
+
+function nextPinNumber(name){
+  const list = pins[name]||[];
+  return list.reduce((m,p)=>Math.max(m,p.num),0)+1;
+}
+
+/* ================= NOTE EDITOR ================= */
+function openNoteEditor(pin, xPct, yPct){
+  editingPinId = pin ? pin.id : null;
+  el('note-sheet-title').textContent = pin ? ('Pin #'+pin.num) : 'New pin';
+  el('note-title').value = pin ? pin.title : '';
+  el('note-desc').value = pin ? pin.desc : '';
+  el('note-delete').style.display = pin ? 'block' : 'none';
+  el('note-sheet')._pending = pin ? null : {xPct, yPct};
+  openSheet('note');
+}
+el('note-save').addEventListener('click', async ()=>{
+  const title = el('note-title').value.trim() || 'Untitled note';
+  const desc = el('note-desc').value.trim();
+  const name = current.name;
+  if(!pins[name]) pins[name]=[];
+  if(editingPinId){
+    const p = pins[name].find(p=>p.id===editingPinId);
+    if(p){ p.title=title; p.desc=desc; }
+  } else {
+    const pend = el('note-sheet')._pending;
+    const p = { id: 'p'+Date.now(), num: nextPinNumber(name), xPct:pend.xPct, yPct:pend.yPct,
+                page: currentPageForPin(), title, desc, ts: Date.now() };
+    pins[name].push(p);
+  }
+  await savePinsFor(name);
+  await saveFileMeta(current);
+  closeSheet('note');
+  exitPinMode();
+  renderPinsForCurrentPage();
+  toast('Note saved.');
+});
+el('note-delete').addEventListener('click', async ()=>{
+  const name = current.name;
+  pins[name] = (pins[name]||[]).filter(p=>p.id!==editingPinId);
+  await savePinsFor(name);
+  closeSheet('note');
+  renderPinsForCurrentPage();
+  toast('Pin deleted.');
+});
+
+/* ================= SHEETS (generic) ================= */
+function openSheet(key){
+  el(key+'-backdrop').classList.add('show');
+  el(key+'-sheet').classList.add('show');
+}
+function closeSheet(key){
+  el(key+'-backdrop').classList.remove('show');
+  el(key+'-sheet').classList.remove('show');
+}
+['search','pins','note'].forEach(key=>{
+  el(key+'-backdrop').addEventListener('click', ()=>closeSheet(key));
+});
+el('search-close').addEventListener('click', ()=>closeSheet('search'));
+el('pins-close').addEventListener('click', ()=>closeSheet('pins'));
+el('note-close').addEventListener('click', ()=>closeSheet('note'));
+
+/* ================= SEARCH ================= */
+el('btn-search').addEventListener('click', ()=>{
+  if(!current || el('stage-empty').style.display!=='none'){ toast('Open a drawing first.'); return; }
+  openSheet('search');
+  el('search-input').value=''; el('search-results').innerHTML=''; el('search-count').textContent='';
+  setTimeout(()=>el('search-input').focus(),150);
+});
+el('search-input').addEventListener('input', (e)=>{
+  const q = e.target.value.trim().toLowerCase();
+  if(!q){ el('search-results').innerHTML=''; el('search-count').textContent=''; return; }
+  const matches = searchIndex.filter(s=>s.text.toLowerCase().includes(q)).slice(0,60);
+  el('search-count').textContent = matches.length + ' match' + (matches.length===1?'':'es') + (current.ext==='pdf' ? ' across '+pdfPageCount+' page(s)' : '');
+  el('search-results').innerHTML = matches.map((m,i)=>{
+    const hi = escapeHtml(m.text).replace(new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','ig'), '<mark>$1</mark>');
+    return '<div class="result-row" data-i="'+i+'"><div class="result-icon">'+(current.ext==='pdf'?'PG':'TX')+'</div>'+
+      '<div class="result-text">'+hi+'<div class="result-loc">'+(current.ext==='pdf' ? 'Page '+m.page : 'On drawing') +'</div></div></div>';
+  }).join('');
+  el('search-results').querySelectorAll('.result-row').forEach(row=>{
+    row.addEventListener('click', async ()=>{
+      const m = matches[parseInt(row.getAttribute('data-i'),10)];
+      closeSheet('search');
+      await jumpToMatch(m);
+    });
+  });
+});
+
+async function jumpToMatch(m){
+  if(current.ext==='pdf'){
+    if(m.page !== pdfPage){ pdfPage = m.page; await renderPdfPage(pdfPage); }
+    // map pdf text coords -> viewport pixel coords using stored transform matrix at scale 1, then to our render scale
+    const renderScale = pdfViewport.scale;
+    const x = m.tx[4]*renderScale;
+    const yTop = (m.pageHeight - m.tx[5])*renderScale;
+    focusPoint((x/el('pan-wrap').offsetWidth)*100, (yTop/el('pan-wrap').offsetHeight)*100);
+  } else {
+    focusPoint(m.xPct, m.yPct);
+  }
+}
+
+function focusPoint(xPct,yPct){
+  const wrap = el('pan-wrap');
+  const stageRect = stage.getBoundingClientRect();
+  const targetScale = Math.max(view.scale, 2.2);
+  const px = wrap.offsetWidth * xPct/100;
+  const py = wrap.offsetHeight * yPct/100;
+  view.scale = Math.min(8, targetScale);
+  view.tx = stageRect.width/2 - px*view.scale;
+  view.ty = stageRect.height/2 - py*view.scale;
+  applyTransform();
+  renderPinsForCurrentPage();
+  const flag = document.createElement('div');
+  flag.className='hit-flag pulse';
+  flag.style.left = xPct+'%'; flag.style.top = yPct+'%';
+  wrap.appendChild(flag);
+  setTimeout(()=>flag.remove(), 2300);
+}
+
+/* ================= PINS SHEET LIST ================= */
+el('btn-pinlist').addEventListener('click', ()=>{
+  if(!current){ toast('Open a drawing first.'); return; }
+  renderPinsSheet();
+  openSheet('pins');
+});
+function renderPinsSheet(){
+  const list = (pins[current.name]||[]).slice().sort((a,b)=>a.num-b.num);
+  if(!list.length){
+    el('pins-list').innerHTML = '<div class="empty-state">No pins yet. Tap “Pin” in the viewer, then tap a spot on the drawing to add one.</div>';
+    return;
+  }
+  el('pins-list').innerHTML = list.map(p=>{
+    const loc = current.ext==='pdf' ? 'Page '+p.page : 'On drawing';
+    return '<div class="pin-row" data-id="'+p.id+'"><div class="num">'+p.num+'</div>'+
+      '<div class="body"><div class="t">'+escapeHtml(p.title)+'</div>'+
+      (p.desc? '<div class="d">'+escapeHtml(p.desc)+'</div>' : '') +
+      '<div class="loc">'+loc+'</div></div></div>';
+  }).join('');
+  el('pins-list').querySelectorAll('.pin-row').forEach(row=>{
+    row.addEventListener('click', ()=>{
+      const p = list.find(x=>x.id===row.getAttribute('data-id'));
+      closeSheet('pins');
+      if(current.ext==='pdf' && p.page!==pdfPage){ pdfPage=p.page; renderPdfPage(pdfPage).then(()=>focusPoint(p.xPct,p.yPct)); }
+      else focusPoint(p.xPct,p.yPct);
+    });
+  });
+}
+
+/* ================= INIT ================= */
+window.addEventListener('resize', ()=>{ if(current) fitToScreen(); });
+
+(async function init(){
+  await loadLibraryMeta();
+  renderLibrary('');
+})();
+
+})();
+</script>
+<script>
+// Optional: only matters for the hosted-PWA route (see README). Harmless no-op
+// inside a packaged Capacitor/WebView APK, where assets are already bundled.
+if('serviceWorker' in navigator){
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('./service-worker.js').catch(function(){});
+  });
+}
+</script>
+</body>
+</html>
